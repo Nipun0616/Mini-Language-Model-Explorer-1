@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini Language Model Explorer</title>
+<meta name="description" content="Tokenize sentences, train skip-gram word embeddings, and explore the vectors in 3D.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">Tokenizer · Embeddings · Vector space</p>
+    <h1>Mini Language Model Explorer</h1>
+    <p class="lead">Follow a sentence from text to token IDs to trained vectors, then see where those vectors sit in space. Everything runs in this page on a six-sentence corpus that you can edit.</p>
+    <nav class="jump" aria-label="Sections">
+      <a href="#part1">1 Tokenization &amp; vocabulary</a>
+      <a href="#part2">2 Word embeddings</a>
+      <a href="#part3">3 3D vector visualization</a>
+      <a href="#part4">4 Try your own sentence</a>
+    </nav>
+    <div class="status" id="statusBar" role="status">Training embeddings…</div>
+  </header>
+
+  <!-- ============ PART 1 ============ -->
+  <section class="part" id="part1">
+    <div class="part-head">
+      <p class="eyebrow">Part 1</p>
+      <h2>Tokenization &amp; vocabulary</h2>
+      <p class="lead">The tokenizer lowercases text, splits it into words and punctuation, and looks each one up in a fixed vocabulary. A word it has never seen is broken into the longest character pieces that do exist.</p>
+    </div>
+
+    <div class="sub">
+      <h3>Training corpus</h3>
+      <div class="field">
+        <label for="corpus">One sentence per line. Edit, add or remove lines, then rebuild.</label>
+        <textarea id="corpus" rows="7" spellcheck="false"></textarea>
+      </div>
+      <div class="row">
+        <button class="btn" id="btnRebuild" type="button">Rebuild vocabulary &amp; retrain</button>
+        <button class="btn ghost" id="btnReset" type="button">Restore the six sentences</button>
+      </div>
+      <p class="msg-bad" id="corpusMsg" hidden></p>
+    </div>
+
+    <div class="sub">
+      <h3>Vocabulary</h3>
+      <div class="tiles" id="vocabStats"></div>
+      <p class="msg-bad" id="vocabWarn" hidden></p>
+      <details class="rules">
+        <summary>How the vocabulary is built</summary>
+        <ul>
+          <li><b>[UNK]</b> takes ID 0 and is the only special token.</li>
+          <li><b>Word-level tokens</b>: the 20 most frequent words and punctuation marks in the corpus, most frequent first. Ties go to whichever appears first.</li>
+          <li><b>Character pieces</b>: the 26 letters a to z, each written with a <span class="mono">##</span> prefix.</li>
+          <li><b>Subword pieces</b>: the most frequent two-letter pairs inside corpus words, enough to bring the pieces to 51 in total. The <span class="mono">##</span> prefix keeps the piece <span class="mono">##i</span> distinct from the word <span class="mono">i</span>.</li>
+          <li>Nothing is padded or duplicated to reach 72. If the corpus has fewer distinct words or letter pairs, the total comes out lower and the check above says so.</li>
+        </ul>
+      </details>
+      <div class="row">
+        <div class="field grow"><label for="vSearch">Search tokens or IDs</label><input type="search" id="vSearch" placeholder="Try “cat”, “##th” or 12"></div>
+        <div class="field"><label for="vSort">Sort by</label><select id="vSort"><option value="id">Token ID</option><option value="freq">Frequency</option></select></div>
+        <div class="field"><label for="vType">Token type</label>
+          <select id="vType"><option value="all">All types</option><option>Special</option><option>Word</option><option>Punctuation</option><option>Character</option><option>Subword</option></select></div>
+      </div>
+      <div class="tablewrap"><table id="vocabTable"></table></div>
+      <p class="note" id="vocabCount"></p>
+    </div>
+
+    <div class="sub">
+      <h3>Enter a Sentence to Tokenize</h3>
+      <div class="row">
+        <div class="field grow"><label for="tokInput">Sentence</label><input type="text" id="tokInput" autocomplete="off"></div>
+        <button class="btn" id="btnTok" type="button">Tokenize</button>
+      </div>
+      <div class="panel sub" id="tokOut" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <!-- ============ PART 2 ============ -->
+  <section class="part" id="part2">
+    <div class="part-head">
+      <p class="eyebrow">From IDs to vectors</p>
+      <h2>Part 2: Word Embeddings &amp; Vector Space</h2>
+      <p class="lead">A token ID is only a label. An embedding gives each token a list of numbers, and the training pushes tokens that appear in similar surroundings toward similar numbers.</p>
+    </div>
+
+    <div class="defs">
+      <div class="def"><h3>Word embedding</h3><p>The vector for one whole word, such as <span class="mono">cat</span>. It is learned from the words that appear around it.</p></div>
+      <div class="def"><h3>Token embedding</h3><p>The vector for any vocabulary entry: words, punctuation, and the character and subword pieces. Every one of the tokens has one.</p></div>
+      <div class="def"><h3>Sentence embedding</h3><p>One vector for a whole sentence, here the mean of its token vectors. It ignores word order.</p></div>
+      <div class="def"><h3>Embedding dimension</h3><p>How many numbers each vector holds. More dimensions can store finer differences but need more data to train well.</p></div>
+    </div>
+
+    <div class="sub">
+      <h3>Train the embeddings</h3>
+      <p class="note">The method is skip-gram with negative sampling. For every token, the model learns to tell the tokens that really appear within two positions of it from five randomly drawn ones. Piece tokens learn from the words they are part of. Vectors start from a seeded random draw, so the same seed always gives the same result.</p>
+      <div class="row">
+        <div class="field"><label for="dimRange">Embedding dimension: <b id="dimOut">8</b></label><input type="range" id="dimRange" min="2" max="32" step="1" value="8"></div>
+        <div class="field"><label for="epRange">Epochs: <b id="epOut">400</b></label><input type="range" id="epRange" min="50" max="1000" step="50" value="400"></div>
+        <div class="field"><label for="seedIn">Random seed</label><input type="number" id="seedIn" value="42" min="0" max="999999" step="1" style="width:110px"></div>
+        <button class="btn" id="btnTrain" type="button">Retrain embeddings</button>
+      </div>
+      <p class="note">Changing the dimension retrains straight away. Epochs and seed apply when you press Retrain.</p>
+      <progress id="prog" max="100" value="100" aria-label="Training progress"></progress>
+      <p class="note" id="trainText"></p>
+      <div class="panel"><div id="lossPlot" class="plot short"></div></div>
+    </div>
+
+    <div class="sub">
+      <h3>Token embeddings</h3>
+      <div class="row">
+        <div class="field grow"><label for="eSearch">Search tokens</label><input type="search" id="eSearch" placeholder="Search"></div>
+        <label class="row" style="gap:6px;align-items:center;font-size:13px"><input type="checkbox" id="eTrained"> Trained tokens only</label>
+      </div>
+      <div class="tablewrap"><table id="embTable"></table></div>
+      <p class="note" id="embNote"></p>
+    </div>
+
+    <div class="sub">
+      <h3>Sentence embeddings</h3>
+      <p class="note">Each sentence vector is the mean of its token vectors. Two sentences made of the same tokens in a different order get the same vector.</p>
+      <div class="tablewrap"><table id="sentTable"></table></div>
+    </div>
+  </section>
+
+  <!-- ============ PART 3 ============ -->
+  <section class="part" id="part3">
+    <div class="part-head">
+      <p class="eyebrow">Part 3</p>
+      <h2>3D vector visualization</h2>
+      <p class="lead">The vectors keep all of their dimensions. The plot is a PCA projection onto the three directions where the vectors vary most, so distances are only an approximation. Click any point to inspect it.</p>
+    </div>
+
+    <div class="sub">
+      <div class="row">
+        <div class="field"><span class="lbl">View</span>
+          <div class="seg" role="group" aria-label="View"><button type="button" id="vw3" aria-pressed="true">3D</button><button type="button" id="vw2" aria-pressed="false">2D</button></div></div>
+        <div class="field"><span class="lbl">Drag to</span>
+          <div class="seg" role="group" aria-label="Drag mode"><button type="button" id="dgRot" aria-pressed="true">Rotate</button><button type="button" id="dgPan" aria-pressed="false">Pan</button><button type="button" id="dgZoom" aria-pressed="false">Zoom box</button></div></div>
+        <button class="btn ghost" id="btnResetView" type="button">Reset graph</button>
+        <label class="row" style="gap:6px;align-items:center;font-size:13px"><input type="checkbox" id="lblToggle" checked> Point labels</label>
+      </div>
+      <div class="cats" id="catBox" role="group" aria-label="Token categories"></div>
+      <div class="panel"><div id="plotMain" class="plot tall"></div></div>
+      <p class="note" id="pcaNote"></p>
+      <p class="note">Scroll to zoom. Hover for the token and its vector values. In 3D the Rotate mode spins the plot, and Pan moves it sideways.</p>
+    </div>
+
+    <div class="grid2">
+      <div class="panel sub" id="inspect">
+        <h3>Inspect an embedding</h3>
+        <div class="row">
+          <div class="field grow"><label for="selA">Selected</label><select id="selA"></select></div>
+          <div class="field grow"><label for="selB">Compare with</label><select id="selB"></select></div>
+        </div>
+        <div class="sub" id="inspectBody"></div>
+      </div>
+      <div class="panel sub">
+        <h3>Embedding vector bar chart</h3>
+        <p class="note">One bar per dimension. The selected item and its comparison sit side by side.</p>
+        <div id="plotBars" class="plot"></div>
+      </div>
+    </div>
+
+    <div class="panel sub">
+      <h3>2D PCA view</h3>
+      <p class="note">The first two principal components, using the same category toggles as above.</p>
+      <div id="plot2d" class="plot tall"></div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel sub">
+        <h3>Cosine similarity between word-level tokens</h3>
+        <p class="note">Blue means the vectors point the same way, red means opposite, white means unrelated.</p>
+        <div id="plotCos" class="plot heat"></div>
+      </div>
+      <div class="sub" style="gap:16px">
+        <div class="panel sub">
+          <h3>Sentence embedding comparison</h3>
+          <p class="note">Each line is one sentence vector, dimension by dimension.</p>
+          <div id="plotSentVec" class="plot short"></div>
+        </div>
+        <div class="panel sub">
+          <h3>Sentence similarity</h3>
+          <div id="plotSentCos" class="plot"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PART 4 ============ -->
+  <section class="part" id="part4">
+    <div class="part-head">
+      <p class="eyebrow">Part 4</p>
+      <h2>Try Your Own Sentence – AI Embedding Explorer</h2>
+      <p class="lead">Type any sentence. It is tokenized, each token is looked up in the trained table, the vectors are averaged, and the result is placed in the plot above as a new point.</p>
+    </div>
+    <div class="explorer">
+      <div class="row">
+        <div class="field grow"><label for="userInput">Your sentence</label><input type="text" id="userInput" autocomplete="off" value="My cat likes the sun today."></div>
+        <button class="btn" id="btnEmbed" type="button">Embed sentence</button>
+        <button class="btn ghost" id="btnClearUser" type="button">Clear my sentences</button>
+      </div>
+      <div class="ulist" id="uList"></div>
+      <div class="sub" id="userOut" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <p class="note" style="margin-top:48px">Educational demo. The corpus is tiny, so the vectors show how the method works and are not a good model of English.</p>
+</div>
+
+<!-- Plotly draws the charts. The second line is a fallback CDN. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.35.2/plotly.min.js"></script>
+<script>if (!window.Plotly) { document.write('<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"><\/script>'); }</script>
+<!-- Tokenizer, embedding training and PCA (no DOM code) -->
+<script src="js/core.js"></script>
+<!-- Page logic: tables, charts, events -->
+<script src="js/app.js"></script>
+</body>
+</html>

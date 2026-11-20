@@ -1,0 +1,11 @@
+{
+  "name": "mini-language-model-explorer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Interactive tokenizer and word-embedding explorer with 3D vector visualization.",
+  "scripts": {
+    "test": "node test/core.test.js",
+    "start": "npx serve ."
+  },
+  "license": "MIT"
+}
